@@ -1,0 +1,111 @@
+<?php
+
+namespace App\Http\Controllers;
+
+use App\Http\Requests\Pengembalian\StorePengembalianRequest;
+use App\Models\Peminjaman;
+use App\Models\Pengembalian;
+use Illuminate\Contracts\View\View;
+use Illuminate\Http\RedirectResponse;
+use Illuminate\Support\Facades\Auth;
+
+class PengembalianController extends Controller
+{
+    public function index(): View
+    {
+        // Auto-update status to 'telat' if overdue by > 30 minutes
+        Peminjaman::where('status', 'dipinjam')
+            ->whereNotNull('tanggal_kembali')
+            ->where('tanggal_kembali', '<', now()->subMinutes(30))
+            ->update(['status' => 'telat']);
+
+        $peminjaman = Peminjaman::with(['barang', 'peminjam'])
+            ->whereIn('status', ['dipinjam', 'telat'])
+            ->latest('tanggal_pinjam')
+            ->get();
+
+        return view('pengembalian.index', compact('peminjaman'));
+    }
+
+    public function create(Peminjaman $peminjaman): View
+    {
+        $peminjaman->load(['barang', 'peminjam']);
+        return view('pengembalian.create', compact('peminjaman'));
+    }
+
+    public function store(StorePengembalianRequest $request)
+    {
+        $validated = $request->validated();
+        $validated['checked_by'] = (string) Auth::id();
+        
+        // Convert datetime-local format to datetime format for database
+        if (isset($validated['tanggal_dikembalikan'])) {
+            $validated['tanggal_dikembalikan'] = date('Y-m-d H:i:s', strtotime(str_replace('T', ' ', $validated['tanggal_dikembalikan'])));
+        }
+
+        $pengembalian = Pengembalian::create($validated);
+
+        // Update status peminjaman
+        $peminjaman = Peminjaman::findOrFail($validated['peminjaman_id']);
+        $peminjaman->update(['status' => $validated['status_barang']]);
+
+        // Update Inventory status
+        $inventory = $peminjaman->barang;
+        if ($inventory) {
+            if ($validated['status_barang'] === 'rusak') {
+                $inventory->update(['status' => 'Rusak']);
+            } elseif ($validated['status_barang'] === 'dikembalikan') {
+                $inventory->update(['status' => 'Baik']);
+            }
+        }
+
+        if ($request->ajax() || $request->wantsJson()) {
+            return response()->json(['success' => true, 'message' => 'Pengembalian berhasil disimpan.']);
+        }
+
+        return redirect()->route('pengembalian.index')
+            ->with('success', 'Pengembalian berhasil disimpan.');
+    }
+
+    public function show(Pengembalian $pengembalian): View
+    {
+        $pengembalian->load(['peminjaman.barang', 'peminjaman.peminjam']);
+        return view('pengembalian.show', compact('pengembalian'));
+    }
+
+    public function edit(Pengembalian $pengembalian): View
+    {
+        $pengembalian->load(['peminjaman.barang', 'peminjaman.peminjam']);
+        return view('pengembalian.edit', compact('pengembalian'));
+    }
+
+    public function update(StorePengembalianRequest $request, Pengembalian $pengembalian): RedirectResponse
+    {
+        $validated = $request->validated();
+        $validated['checked_by'] = (string) Auth::id();
+        
+        // Convert datetime-local format to datetime format for database
+        if (isset($validated['tanggal_dikembalikan'])) {
+            $validated['tanggal_dikembalikan'] = date('Y-m-d H:i:s', strtotime(str_replace('T', ' ', $validated['tanggal_dikembalikan'])));
+        }
+
+        $pengembalian->update($validated);
+
+        // Update status peminjaman
+        $peminjaman = Peminjaman::findOrFail($validated['peminjaman_id']);
+        $peminjaman->update(['status' => $validated['status_barang']]);
+
+        // Update Inventory status
+        $inventory = $peminjaman->barang;
+        if ($inventory) {
+            if ($validated['status_barang'] === 'rusak') {
+                $inventory->update(['status' => 'Rusak']);
+            } elseif ($validated['status_barang'] === 'dikembalikan') {
+                $inventory->update(['status' => 'Baik']);
+            }
+        }
+
+        return redirect()->route('pengembalian.index')
+            ->with('success', 'Pengembalian berhasil diperbarui.');
+    }
+}
