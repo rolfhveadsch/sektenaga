@@ -9,13 +9,11 @@
 
 **Modern School Management System**
 
-[Demo](#) • [Documentation](INSTALLATION_GUIDE.md) • [Quick Start](QUICK_START.md)
-
 </div>
 
 ---
 
-## 🚀 Quick Start
+## Quick Start
 
 ### Prerequisites
 
